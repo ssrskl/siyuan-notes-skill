@@ -1,197 +1,111 @@
 # 思源笔记查询技能
 
-这是一个用于查询思源笔记内容的Claude技能，基于思源SQL查询系统规范，支持blocks表、refs表、attributes表的完整查询功能。
+让你的思源笔记与Claude完美融合，实现强大的笔记智能查询和管理。
 
-## 特性
+**GitHub仓库**: https://github.com/2234839/siyuan-notes-skill
 
-- ✅ **基于思源官方SQL规范** - 完全兼容思源笔记数据库结构和查询语法
-- ✅ **多表查询支持** - 支持blocks、refs、attributes三表关联查询
-- ✅ **丰富查询类型** - 内容搜索、文档管理、引用查询、属性过滤等
-- ✅ **SQLite语法** - 支持strftime等SQLite函数
-- ✅ **嵌入块兼容** - 生成思源嵌入块格式的SQL查询
-- ✅ **命令行工具** - 提供完整的CLI接口
+## ✨ 为什么选择这个技能？
 
-## 安装配置
+- 🔍 **全量内容搜索** - 不再局限于思源内置搜索，可以查询笔记中的任何内容
+- 🔗 **智能关联发现** - 自动发现笔记间的引用关系，找到你可能遗忘的关联
+- 📋 **任务管理集成** - 直接查询和管理笔记中的待办事项
+- 🏷️ **标签属性查询** - 支持基于标签和自定义属性的精准筛选
+- 📊 **时间维度分析** - 按时间范围查询日记、任务、近期文档等
+- 🎯 **零学习成本** - 自然语言即可完成复杂查询，无需学习SQL
 
-### 1. 安装依赖
+## 🚀 快速开始
 
+### 1. 安装技能
 ```bash
+# 克隆到Claude技能目录
+cd ~/.claude/skills
+git clone https://github.com/2234839/siyuan-notes-skill.git siyuan-notes
+
+# 安装依赖
 cd siyuan-notes
 npm install
 ```
 
-### 2. 配置API Token
-
-1. 打开思源笔记
-2. 进入 **设置** → **关于**
-3. 复制 **API Token**
-4. 创建 `.env` 文件并配置：
-
+### 2. 配置连接
+1. 打开思源笔记 → **设置** → **关于**
+2. 复制 **API Token**
+3. 创建配置文件：
 ```bash
 cp .env.example .env
 ```
-
-编辑 `.env` 文件，填入你的API Token：
-
+4. 编辑 `.env`，填入你的API Token：
 ```env
 SIYUAN_HOST=localhost
 SIYUAN_PORT=6806
-SIYUAN_API_TOKEN=your_actual_token
+SIYUAN_API_TOKEN=你的API_TOKEN
 ```
 
-### 3. 测试连接
+### 3. 开始使用
+安装完成后，你就可以用自然语言向Claude询问关于笔记的各种问题！
 
-```bash
-npm test
-# 或者
-node index.js check
-```
+## 💡 使用示例
 
-## 使用方法
+### 日常查询
+> "帮我搜索所有包含'人工智能'的笔记"
+> "最近一周我写了哪些待办事项？"
+> "找出所有标记为'重要'的笔记"
+> "显示我的所有日记文档"
 
-### 命令行使用
+### 深度分析
+> "哪些笔记引用了这篇文章？"
+> "列出项目中未完成的任务"
+> "找出这个笔记本里没有被引用的文档"
+> "随机推荐一个笔记标题让我看看"
 
-```bash
-# 基础搜索
-node index.js search "人工智能" p          # 搜索段落
-node index.js search "关键词" h            # 搜索标题
+### 文档管理
+> "显示所有文档的结构"
+> "查找特定时间段创建的笔记"
+> "按优先级排序显示我的任务"
 
-# 文档管理
-node index.js docs                         # 列出所有文档
-node index.js headings "文档ID" h2         # 查询二级标题
-node index.js blocks "文档ID" l            # 查询列表块
+## ⚡ 核心优势
 
-# 高级查询
-node index.js backlinks "块ID"             # 查询反向链接
-node index.js tasks "[ ]" 7                # 查询7天未完成任务
-node index.js daily 20231010 20231013      # 查询日记
-node index.js attr "custom-priority"       # 查询自定义属性
-node index.js bookmarks "重要"             # 查询书签
+### 🎯 精准定位
+相比思源内置搜索，这个技能可以：
+- 基于时间、属性、引用关系等多维度筛选
+- 支持复杂的组合查询条件
+- 快速定位特定类型的笔记内容
 
-# 实用工具
-node index.js random "文档ID"              # 随机漫游
-node index.js recent 7 h                   # 最近7天的标题
-node index.js unreferenced "笔记本ID"      # 未被引用的文档
-```
+### 🔄 持续同步
+- 实时连接你的思源笔记数据库
+- 自动获取最新的笔记内容和结构
+- 支持远程思源实例
 
-# 列出指定笔记本的文档
-node index.js docs "20211231120000-abcdefg"
+### 🛡️ 安全可靠
+- 本地运行，数据不离开你的设备
+- 支持思源笔记的安全认证机制
+- 不会修改或删除你的笔记内容
 
-# 查询文档的子块
-node index.js blocks "20211231120000-abcdefg"
+## 🔧 支持的查询类型
 
-# 搜索包含标签的笔记
-node index.js tag "重要"
+- **内容搜索** - 全文检索笔记内容
+- **文档导航** - 按文档结构浏览
+- **引用关系** - 发现笔记间的链接
+- **任务管理** - 待办事项状态跟踪
+- **时间查询** - 按创建/修改时间筛选
+- **标签系统** - 基于标签的分类查询
+- **属性过滤** - 自定义属性精确筛选
 
-# 查询指向文档的链接
-node index.js backlinks "20211231120000-abcdefg"
+## 📝 常见问题
 
-# 查询待办事项
-node index.js tasks
+**Q: 需要学习SQL吗？**
+A: 不需要！用自然语言描述你的需求即可，Claude会自动转换为相应的查询。
 
-# 查询最近7天的文档
-node index.js recent 7
-```
+**Q: 会修改我的笔记吗？**
+A: 完全不会，这个技能只读取内容，不会对笔记做任何修改。
 
-### 编程接口使用
+**Q: 支持哪些思源版本？**
+A: 支持所有提供API接口的思源笔记版本。
 
-```javascript
-const siyuan = require('./index.js');
+**Q: 可以在移动设备上使用吗？**
+A: 只要能访问到你的思源笔记API接口就可以使用。
 
-// 搜索笔记
-const results = await siyuan.searchNotes('人工智能');
-console.log(siyuan.formatResults(results));
+---
 
-// 列出笔记本
-const notebooks = await siyuan.listNotebooks();
+**开始你的智能笔记管理之旅！** 🎉
 
-// 查询待办事项
-const tasks = await siyuan.searchTasks('[ ]');
-```
-
-## SQL查询示例
-
-### 基础查询
-
-```sql
--- 搜索包含特定内容的块
-SELECT * FROM blocks WHERE content LIKE '%关键词%' LIMIT 10
-
--- 查询特定文档的子块
-SELECT * FROM blocks WHERE root_id = '文档ID' ORDER BY create_time
-
--- 搜索标题
-SELECT * FROM blocks WHERE type = 'h1' AND content LIKE '%关键词%'
-```
-
-### 高级查询
-
-```sql
--- 查询最近修改的内容
-SELECT * FROM blocks
-WHERE content LIKE '%关键词%'
-ORDER BY updated_time DESC
-LIMIT 20
-
--- 查询未完成的任务
-SELECT * FROM blocks
-WHERE content LIKE '%[ ]%'
-AND type = 'l'
-ORDER BY created_time DESC
-```
-
-## API文档
-
-### 主要函数
-
-- `executeSiyuanQuery(sql)` - 执行SQL查询
-- `searchNotes(keyword, limit)` - 搜索笔记内容
-- `listNotebooks()` - 列出所有笔记本
-- `listDocuments(notebookId, docType)` - 列出笔记本文档
-- `getDocumentBlocks(rootId, blockType)` - 查询文档子块
-- `searchByTag(tag, limit)` - 搜索标签
-- `searchBacklinks(targetId, limit)` - 查询反向链接
-- `searchTasks(status, limit)` - 查询待办事项
-- `getRecentDocuments(days, orderBy, limit)` - 查询最近文档
-- `checkConnection()` - 检查连接状态
-
-### 数据字段
-
-- `id` - 块ID
-- `content` - 块内容
-- `type` - 块类型 (h1-h6, p, l, i, b等)
-- `created_time` - 创建时间
-- `updated_time` - 更新时间
-- `root_id` - 根文档ID
-- `parent_id` - 父块ID
-- `notebook` - 笔记本ID
-- `path` - 文档路径
-- `ial` - 内联属性链接
-
-## 注意事项
-
-1. **思源笔记必须运行** - 确保思源笔记正在运行且API已启用
-2. **API Token安全** - 不要将API Token提交到代码仓库
-3. **网络访问** - 默认只允许本地访问
-4. **查询限制** - 使用LIMIT避免返回过多结果
-
-## 故障排除
-
-### 连接失败
-- 检查思源笔记是否运行
-- 确认端口号是否正确 (默认6806)
-- 验证API Token是否正确
-
-### 查询错误
-- 检查SQL语法是否正确
-- 确认字段名拼写正确
-- 使用简单SQL测试连接
-
-### 性能问题
-- 使用LIMIT限制结果数量
-- 添加WHERE条件过滤
-- 避免过于复杂的JOIN查询
-
-## 许可证
-
-MIT License
+安装完成后，直接对Claude说："帮我查看笔记"就可以开始了。
