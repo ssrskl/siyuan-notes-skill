@@ -10,6 +10,7 @@ const path = require('path');
 // 加载.env文件
 function loadEnvFile() {
     try {
+        // 始终使用当前JS文件所在目录下的.env文件
         const envPath = path.join(__dirname, '.env');
         if (fs.existsSync(envPath)) {
             const envContent = fs.readFileSync(envPath, 'utf8');
@@ -23,14 +24,19 @@ function loadEnvFile() {
                     }
                 }
             });
-            console.log('✅ 已加载.env配置文件');
+            if (DEBUG_MODE) console.log('✅ 已加载.env配置文件:', envPath);
+        } else {
+            if (DEBUG_MODE) console.log('⚠️  未找到.env文件:', envPath);
         }
     } catch (error) {
-        console.log('⚠️  未找到.env文件或加载失败:', error.message);
+        if (DEBUG_MODE) console.log('⚠️  .env文件加载失败:', error.message);
     }
 }
 
-// 加载环境变量
+// 只在调试模式下输出配置信息
+const DEBUG_MODE = process.env.DEBUG === 'true' || process.argv.includes('--debug');
+
+// 加载环境变量 (静默模式)
 loadEnvFile();
 
 /** 环境变量或默认配置 */
@@ -42,7 +48,7 @@ const SIYUAN_BASIC_AUTH_USER = process.env.SIYUAN_BASIC_AUTH_USER || '';
 const SIYUAN_BASIC_AUTH_PASS = process.env.SIYUAN_BASIC_AUTH_PASS || '';
 
 /** API端点配置 */
-const API_BASE_URL = `${SIYUAN_USE_HTTPS ? 'https' : 'http'}://${SIYUAN_HOST}${SIYUAN_PORT ? ':' + SIYU_PORT : ''}`;
+const API_BASE_URL = `${SIYUAN_USE_HTTPS ? 'https' : 'http'}://${SIYUAN_HOST}${SIYUAN_PORT ? ':' + SIYUAN_PORT : ''}`;
 // 测试不同的可能端点
 const POSSIBLE_ENDPOINTS = [
     '/api/query/sql',
@@ -52,11 +58,11 @@ const POSSIBLE_ENDPOINTS = [
     '/api/filetree/listDocsByPath' // 从你的正确请求中找到的端点
 ];
 const SQL_QUERY_ENDPOINT = `${API_BASE_URL}/api/query/sql`;
-
-// 调试信息
-console.log(`📡 服务器地址: ${API_BASE_URL}/api/query/sql`);
-console.log(`🔑 API Token: ${SIYUAN_API_TOKEN ? '已配置' : '未配置'}`);
-console.log(`🔐 Basic Auth: ${SIYUAN_BASIC_AUTH_USER ? `用户: ${SIYUAN_BASIC_AUTH_USER}` : '未配置'}`);
+if (DEBUG_MODE) {
+    console.log(`📡 服务器地址: ${API_BASE_URL}/api/query/sql`);
+    console.log(`🔑 API Token: ${SIYUAN_API_TOKEN ? '已配置' : '未配置'}`);
+    console.log(`🔐 Basic Auth: ${SIYUAN_BASIC_AUTH_USER ? `用户: ${SIYUAN_BASIC_AUTH_USER}` : '未配置'}`);
+}
 
 /** HTTP Basic Auth编码 */
 function getBasicAuthHeader() {
@@ -139,63 +145,100 @@ async function executeSiyuanQuery(sqlQuery) {
             stmt: sqlQuery
         };
 
+        let response;
+
         // 根据是否配置Basic Auth来决定认证方式
         if (SIYUAN_BASIC_AUTH_USER && SIYUAN_BASIC_AUTH_PASS) {
             // 场景1：有Basic Auth中间件 + 思源Token
-            // Basic Auth使用Authorization头，思源Token作为URL参数避免冲突
             const basicAuthCredentials = Buffer.from(`${SIYUAN_BASIC_AUTH_USER}:${SIYUAN_BASIC_AUTH_PASS}`).toString('base64');
             headers.Authorization = `Basic ${basicAuthCredentials}`;
 
             // Token通过URL参数传递，避免与Basic Auth的Authorization头冲突
             const urlWithToken = `${SQL_QUERY_ENDPOINT}?token=${encodeURIComponent(SIYUAN_API_TOKEN)}`;
 
-            console.log('🔐 使用双重认证：Basic Auth (Authorization头) + Token (URL参数)');
+            if (DEBUG_MODE) console.log('🔐 使用双重认证：Basic Auth (Authorization头) + Token (URL参数)');
 
-            const response = await fetch(urlWithToken, {
+            response = await fetch(urlWithToken, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify(requestBody)
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-
-            if (result.code !== 0) {
-                throw new Error(`思源API错误: ${result.msg}`);
-            }
-
-            return result.data;
         } else {
             // 场景2：只有思源Token认证
-            // 使用思源官方推荐的方式：Authorization: Token <token>
             headers.Authorization = `Token ${SIYUAN_API_TOKEN}`;
 
-            console.log('🔑 使用思源Token认证：Authorization头');
+            if (DEBUG_MODE) console.log('🔑 使用思源Token认证：Authorization头');
 
-            const response = await fetch(SQL_QUERY_ENDPOINT, {
+            response = await fetch(SQL_QUERY_ENDPOINT, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify(requestBody)
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-
-            if (result.code !== 0) {
-                throw new Error(`思源API错误: ${result.msg}`);
-            }
-
-            return result.data;
         }
+
+        // 处理HTTP错误
+        if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+
+            // 根据状态码提供更具体的错误信息
+            switch (response.status) {
+                case 401:
+                    errorMessage = '认证失败，请检查API Token或Basic Auth配置';
+                    break;
+                case 403:
+                    errorMessage = '权限不足，请检查API权限设置';
+                    break;
+                case 404:
+                    errorMessage = 'API端点未找到，请检查思源笔记是否运行';
+                    break;
+                case 500:
+                    errorMessage = '服务器内部错误，请检查思源笔记状态';
+                    break;
+                case 503:
+                    errorMessage = '服务不可用，请确认思源笔记正在运行';
+                    break;
+            }
+
+            throw new Error(errorMessage);
+        }
+
+        // 解析响应
+        const result = await response.json();
+
+        // 检查思源API错误码
+        if (result.code !== 0) {
+            let errorMessage = `思源API错误: ${result.msg || '未知错误'}`;
+
+            // 根据常见错误提供解决方案
+            if (result.msg?.includes('token')) {
+                errorMessage += ' (请检查API Token是否正确)';
+            }
+            if (result.msg?.includes('permission')) {
+                errorMessage += ' (请检查API权限设置)';
+            }
+
+            throw new Error(errorMessage);
+        }
+
+        return result.data || [];
     } catch (error) {
-        console.error('思源笔记查询失败:', error.message);
-        throw error;
+        // 网络相关错误
+        if (error.name === 'FetchError' || error.code === 'ECONNREFUSED') {
+            throw new Error(`无法连接到思源笔记: ${error.message}. 请确认思源笔记正在运行且端口配置正确`);
+        }
+
+        // 认证相关错误
+        if (error.message.includes('401') || error.message.includes('token')) {
+            throw new Error(`认证失败: ${error.message}. 请检查API Token配置`);
+        }
+
+        // 已经是格式化的错误，直接抛出
+        if (error.message.includes('思源API错误') || error.message.includes('HTTP')) {
+            throw error;
+        }
+
+        // 其他未知错误
+        throw new Error(`查询失败: ${error.message}`);
     }
 }
 
@@ -532,22 +575,90 @@ function formatSiyuanTime(timeStr) {
 /**
  * 格式化查询结果为可读字符串
  * @param {Array} results - 查询结果数组
+ * @param {Object} options - 格式化选项
  * @returns {string} 格式化后的字符串
  */
-function formatResults(results) {
+function formatResults(results, options = {}) {
+    const {
+        showIndex = true,
+        showTime = true,
+        showType = true,
+        showPath = false,
+        contentLength = 100,
+        separator = '\n'
+    } = options;
+
     if (!results || results.length === 0) {
         return '查询结果为空';
     }
 
     return results.map((item, index) => {
-        const time = formatSiyuanTime(item.updated || item.created);
-        const type = item.subtype || item.type || 'unknown';
-        const content = item.content?.length > 100
-            ? item.content.substring(0, 100) + '...'
-            : item.content || '(无内容)';
+        const parts = [];
 
-        return `${index + 1}. [${time}] ${type}: ${content}`;
-    }).join('\n');
+        // 添加序号
+        if (showIndex) {
+            parts.push(`${index + 1}.`);
+        }
+
+        // 添加时间
+        if (showTime && (item.updated || item.created)) {
+            const time = formatSiyuanTime(item.updated || item.created);
+            parts.push(`[${time}]`);
+        }
+
+        // 添加类型
+        if (showType) {
+            const type = item.subtype || item.type || 'unknown';
+            parts.push(`${type}:`);
+        }
+
+        // 添加内容
+        const content = item.content || '(无内容)';
+        if (content.length > contentLength) {
+            parts.push(content.substring(0, contentLength) + '...');
+        } else {
+            parts.push(content);
+        }
+
+        // 添加路径
+        if (showPath && item.hpath) {
+            parts.push(`(${item.hpath})`);
+        }
+
+        return parts.join(' ');
+    }).join(separator);
+}
+
+/**
+ * 格式化查询结果为结构化数据
+ * @param {Array} results - 查询结果数组
+ * @returns {Object} 结构化结果
+ */
+function formatStructuredResults(results) {
+    if (!results || results.length === 0) {
+        return {
+            success: true,
+            count: 0,
+            message: '查询结果为空',
+            data: []
+        };
+    }
+
+    return {
+        success: true,
+        count: results.length,
+        message: `找到 ${results.length} 条结果`,
+        data: results.map(item => ({
+            id: item.id,
+            content: item.content || '',
+            type: item.type || '',
+            subtype: item.subtype || '',
+            created: formatSiyuanTime(item.created),
+            updated: formatSiyuanTime(item.updated),
+            path: item.hpath || '',
+            root_id: item.root_id || ''
+        }))
+    };
 }
 
 /**
@@ -754,6 +865,7 @@ module.exports = {
     checkConnection,
     formatSiyuanTime,
     formatResults,
+    formatStructuredResults,
     generateEmbedBlock
 };
 

@@ -1,382 +1,422 @@
 ---
 name: siyuan-notes
-description: 思源笔记查询工具，基于思源SQL查询系统，支持blocks、refs、attributes等表的完整查询功能
+description: 思源笔记查询工具，如果用户的请求涉及查找、检索、浏览他们的笔记内容，就应该使用这个技能，例如:查询我的xxx
 ---
 
-# 思源笔记查询技能
+## 技能使用指南
 
-## 技能概述
+### 推荐调用方式
 
-这是一个专业的思源笔记查询工具，通过思源笔记的SQL API接口提供强大的数据检索能力。基于SQLite数据库，支持复杂的关系查询、全文搜索和属性过滤。
-
-## 核心功能特性
-
-### 🔍 强大的SQL查询引擎
-- **完整SQLite语法**: 支持所有SQLite标准语法和函数
-- **多表关联查询**: 同时查询blocks、refs、attributes等多个表
-- **全文搜索支持**: 利用blocks_fts表进行高效文本检索
-- **时间函数**: 支持strftime()等SQLite时间函数
-
-### 🔧 双重认证安全
-- **API Token认证**: 使用思源笔记的官方Token认证
-- **HTTP Basic Auth**: 支持额外的Basic Auth中间件保护
-- **智能认证**: 自动识别和适配不同的认证组合
-- **冲突解决**: Basic Auth用头，Token用URL参数，避免冲突
-
-### 📊 实时数据库结构 (基于实际探索)
-
-#### blocks 表 - 核心内容块表
-```sql
--- 字段说明 (按重要性排序)
-content: 纯文本内容 - 最常用的搜索字段
-markdown: 完整Markdown内容 - 包含格式化信息
-type: 块类型 - 段落(p)/标题(h)/列表(l)/图片(i)/文档(d)/代码块(c)/表格(tb)等
-subtype: 子类型 - 如h1-h6标题级别
-created/updated: 时间戳 - 用于时间范围查询
-hpath: 人类可读路径 - 文档定位
-parent_id: 父块ID - 层级关系
-root_id: 根文档ID - 文档归属
-box: 笔记本ID - 笔记本隔离
-id: 唯一标识 - 精确定位
-length: 内容长度 - 可用于过滤短内容
-tag: 标签信息 - 标签分类
-ial: 内联属性 - 块级属性设置
-name: 块名称 - 命名块
-alias: 别名 - 多名称支持
-memo: 备注 - 附加信息
-hash: 内容哈希 - 重复检测
-sort: 排序 - 自定义排序
-path: 文件路径 - 系统路径
-
--- 常见块类型分布 (因用户而异)
-段落(p): 最常见的文本内容
-图片(i): 图片和媒体文件
-列表(l): 有序列表和无序列表
-标题(h): 各级标题 (h1-h6)
-文档(d): 文档根节点
-块引用(b): 块引用内容
-代码块(c): 代码和脚本
-表格(tb): 表格数据
-嵌入查询(query_embed): 动态嵌入查询
-符号(s): 特殊符号和标记
-```
-
-#### refs 表 - 引用关系表
-```sql
--- 字段说明
-def_block_id: 被引用块ID - 链接目标
-def_block_root_id: 被引用文档ID - 目标文档
-block_id: 引用所在块ID - 来源位置
-content: 引用锚文本 - 链接文本
-type: 引用类型 - 链接分类
-
--- 常见引用类型
-textmark: 文本标记、高亮
-query_embed: 嵌入查询引用
-```
-
-#### attributes 表 - 属性表
-```sql
--- 字段说明
-name: 属性名称 - 支持自定义属性
-value: 属性值 - 属性内容
-block_id: 关联块ID - 属性归属
-type: 属性类型 - 属性分类
-root_id: 根文档ID - 文档级属性
-box: 笔记本ID - 笔记本级属性
-```
-
-#### 全文搜索支持
-```sql
-blocks_fts: 全文搜索表 - 高效文本检索
-blocks_fts_case_insensitive: 不区分大小写搜索
-blocks_fts_content: 搜索内容索引
-blocks_fts_data: 搜索数据存储
-```
-
-## 实用查询模板
-
-### 🎯 日常常用查询
-
-#### 1. 内容搜索 (最常用)
-```sql
--- 基础文本搜索
-SELECT content, created, hpath
-FROM blocks
-WHERE content LIKE '%关键词%' AND type = 'p'
-ORDER BY updated DESC
-LIMIT 20
-
--- 全文搜索 (更快)
-SELECT b.content, b.created, b.hpath
-FROM blocks b
-JOIN blocks_fts fts ON b.id = fts.rowid
-WHERE blocks_fts MATCH '关键词'
-LIMIT 20
-
--- 按文档搜索特定内容
-SELECT content, type, created
-FROM blocks
-WHERE hpath LIKE '%项目名称%'
-AND content LIKE '%重要%'
-ORDER BY created DESC
-```
-
-#### 2. 文档管理查询
-```sql
--- 列出所有文档 (按更新时间)
-SELECT id, content, updated, hpath
-FROM blocks
-WHERE type = 'd'
-ORDER BY updated DESC
-LIMIT 50
-
--- 查找特定笔记本下的文档
-SELECT * FROM blocks
-WHERE box = '20210816161940-3mfvumm'
-AND type = 'd'
-ORDER BY updated DESC
-
--- 查找最近修改的标题
-SELECT content, type, subtype, hpath, updated
-FROM blocks
-WHERE type = 'h' AND content IS NOT NULL
-ORDER BY updated DESC
-LIMIT 10
-```
-
-#### 3. 任务和时间管理
-```sql
--- 查找所有列表项 (可能包含任务)
-SELECT content, created, hpath
-FROM blocks
-WHERE type = 'l'
-AND content LIKE '%待办%'
-ORDER BY updated DESC
-LIMIT 15
-
--- 按时间范围查询内容
-SELECT content, type, created, hpath
-FROM blocks
-WHERE created > '20250101000000'
-ORDER BY created DESC
-LIMIT 20
-
--- 查找近期更新的内容
-SELECT * FROM blocks
-WHERE updated > strftime('%Y%m%d%H%M%S', datetime('now', '-7 days'))
-ORDER BY updated DESC
-LIMIT 10
-```
-
-#### 4. 媒体和资源查询
-```sql
--- 查找所有图片块
-SELECT content, created, hpath
-FROM blocks
-WHERE type = 'i'
-ORDER BY updated DESC
-LIMIT 20
-
--- 查找代码块
-SELECT content, created, hpath
-FROM blocks
-WHERE type = 'c'
-ORDER BY updated DESC
-LIMIT 15
-
--- 查找表格内容
-SELECT content, created, hpath
-FROM blocks
-WHERE type = 'tb'
-ORDER BY updated DESC
-LIMIT 10
-```
-
-#### 5. 引用和链接分析
-```sql
--- 查找所有引用关系
-SELECT r.content, b.hpath, b.type
-FROM refs r
-JOIN blocks b ON r.block_id = b.id
-WHERE r.type = 'textmark'
-LIMIT 20
-
--- 查找包含特定关键词的嵌入查询
-SELECT content, created, hpath
-FROM blocks
-WHERE type = 'query_embed'
-AND content LIKE '%关键词%'
-```
-
-### 🛠 高级查询技巧
-
-#### 性能优化查询
-```sql
--- 使用LIMIT避免过多结果
-SELECT content FROM blocks WHERE type = 'p' LIMIT 10
-
--- 使用长度过滤排除空内容
-SELECT content, hpath FROM blocks
-WHERE length > 10 AND content IS NOT NULL
-ORDER BY updated DESC
-LIMIT 20
-
--- 使用索引友好的查询
-SELECT * FROM blocks WHERE box = '笔记本ID' AND type = 'd'
-```
-
-#### 复杂关联查询
-```sql
--- 查询包含特定内容的文档及其子块
-SELECT d.content as doc_title, c.content as child_content
-FROM blocks d
-LEFT JOIN blocks c ON c.root_id = d.id
-WHERE d.type = 'd' AND d.content LIKE '%重要%'
-ORDER BY d.updated DESC
-LIMIT 30
-
--- 统计各类块的数量
-SELECT type, COUNT(*) as count, AVG(length) as avg_length
-FROM blocks
-GROUP BY type
-ORDER BY count DESC
-```
-
-## 使用指南
-
-### 快速开始
-
-#### 环境配置 (首次使用)
-技能会自动检测环境配置，如果未设置会显示详细配置步骤：
-1. 获取思源笔记API Token (设置 → 关于 → API Token)
-2. 创建 `.env` 文件配置服务器信息
-3. 如果有Basic Auth中间件，配置认证信息
-
-#### 三种使用方式
-
-**方式1: 命令行工具 (推荐日常使用)**
+**方式1：使用Bash工具**
 ```bash
-# 基础搜索
-node index.js search "人工智能"        # 搜索关键词
-node index.js search "开发" 5          # 搜索前5个结果
-node index.js search "重要" h1         # 在标题中搜索
+# 在技能目录中执行搜索
+node index.js search "工作总结" 10
 
-# 文档管理
-node index.js docs                     # 列出所有文档
-node index.js recent 7                # 最近7天更新的内容
+# 查询最近内容
+node index.js recent 7
 
-# 检查连接
-node index.js check                    # 验证配置和连接
+# 其他功能
+node index.js check
 ```
 
-**方式2: 编程接口 (集成使用)**
+**方式2：使用node -e执行JS代码（使用显示的 skill Base directory 作为 cwd）**
+```bash
+node -e "
+const siyuan = require('./index.js');
+(async () => {
+  const results = await siyuan.searchNotes('工作总结', 10);
+  console.log(siyuan.formatResults(results));
+})();
+"  
+```
+
+**注意事项：**
+- 直接执行index.js时：会自动从其所在目录加载.env文件，无需特殊路径处理
+- 使用node -e时：用技能执行时显示的 "Base directory for this skill" 路径作为cwd参数
+- 路径中包含空格时需要引号
+- 不要用cd命令，直接用cwd参数控制工作目录
+- 尽可能使用 node -e执行而非创建临时 js 文件
+
+## 快速使用指南
+
+### 核心 API 函数
+
 ```javascript
 const siyuan = require('./index.js');
 
-// 搜索内容
-const results = await siyuan.searchNotes('关键词');
-console.log(`找到 ${results.length} 条结果`);
+// 搜索笔记内容
+await siyuan.searchNotes('关键词', 20, 'p'); // 搜索段落
+await siyuan.searchNotes('关键词', 10, 'h'); // 搜索标题
 
-// 列出文档
-const docs = await siyuan.listDocuments();
-docs.forEach(doc => console.log(doc.content));
+// 查询最近内容
+await siyuan.getRecentBlocks(7, 'updated'); // 最近7天更新
+
+// 查询任务
+await siyuan.searchTasks('[ ]', 7); // 未完成任务
+
+// 格式化结果
+siyuan.formatResults(results); // 转换为可读格式
 ```
 
-**方式3: 自定义SQL (高级查询)**
-```javascript
-const { executeSiyuanQuery } = require('./index.js');
+### 常见查询场景
 
-const sql = `
-    SELECT content, created, hpath
+#### 1. 搜索工作总结/开发内容
+
+```javascript
+// 搜索包含"工作"的内容
+await siyuan.searchNotes('工作', 15);
+
+// 搜索包含"开发"的内容
+await siyuan.searchNotes('开发', 10);
+
+// 搜索包含"总结"的标题
+await siyuan.searchNotes('总结', 10, 'h');
+
+// 查询最近7天的所有内容
+await siyuan.getRecentBlocks(7, 'updated');
+```
+
+#### 2. 任务管理
+
+```javascript
+// 查询未完成任务
+await siyuan.searchTasks('[ ]', 7);
+
+// 查询已完成任务
+await siyuan.searchTasks('[x]', 30);
+
+// 查询所有任务（不限状态）
+await siyuan.searchTasks('', 7);
+```
+
+#### 3. 文档导航
+
+```javascript
+// 列出所有文档
+await siyuan.listDocuments();
+
+// 查询特定文档的子块
+await siyuan.getDocumentBlocks('文档ID');
+
+// 查询文档标题
+await siyuan.getDocumentHeadings('文档ID');
+```
+
+#### 4. 标签和引用
+
+```javascript
+// 按标签搜索
+await siyuan.searchByTag('重要', 10);
+
+// 查询反向链接
+await siyuan.getBacklinks('块ID', 20);
+```
+
+### 命令行使用
+
+```bash
+# 基础搜索
+node index.js search "工作" 10
+node index.js search "总结" 5 h
+
+# 查询最近内容
+node index.js recent 7
+node index.js recent 14 p
+
+# 任务查询
+node index.js tasks "[ ]" 7
+
+# 其他功能
+node index.js docs
+node index.js tag "重要"
+```
+
+## 查询策略选择
+
+### 何时使用 API 函数
+
+- **简单搜索**: 单个关键词搜索
+- **常规查询**: 获取最近内容、文档列表等
+- **快速原型**: 验证查询思路
+- **标准化操作**: 任务管理、标签查询等
+
+### 何时使用 SQL
+
+- **复杂条件**: 多个 AND/OR 条件组合
+- **跨表查询**: 需要 JOIN 多个表
+- **统计分析**: COUNT、AVG、GROUP BY 等
+- **性能优化**: 需要精确控制查询逻辑
+
+## 实际应用示例
+
+### 查找工作总结 (混合策略)
+
+```javascript
+const siyuan = require('./index.js');
+
+// 1. 使用API快速搜索
+const workResults = await siyuan.searchNotes('工作', 10);
+const summaryResults = await siyuan.searchNotes('总结', 5, 'h');
+
+// 2. 使用SQL进行精确查询
+const complexResults = await siyuan.executeSiyuanQuery(`
+    SELECT content, hpath, created, type, subtype
     FROM blocks
-    WHERE type = 'h1'
-    AND created > '20250101000000'
+    WHERE (content LIKE '%工作%' OR content LIKE '%总结%' OR content LIKE '%汇报%')
+    AND created >= '20251201000000'
+    AND type IN ('p', 'h', 'l')
+    AND length > 10
     ORDER BY updated DESC
-    LIMIT 10
+    LIMIT 25
+`);
+
+// 3. 合并结果并去重
+const allResults = [...workResults, ...summaryResults, ...complexResults];
+const uniqueResults = allResults.filter(
+  (item, index, self) => index === self.findIndex((t) => t.id === item.id),
+);
+
+// 4. 格式化输出
+return siyuan.formatResults(uniqueResults.slice(0, 20));
+```
+
+### 项目进展查询 (SQL 为主)
+
+```javascript
+// 查找特定项目的所有相关内容
+const projectQuery = `
+    SELECT content, type, subtype, hpath, created, updated
+    FROM blocks
+    WHERE (
+        content LIKE '%项目名称%'
+        OR content LIKE '%功能模块%'
+        OR hpath LIKE '%项目路径%'
+    )
+    AND created >= '20251201000000'
+    ORDER BY updated DESC, type DESC
+    LIMIT 30
 `;
 
-const results = await executeSiyuanQuery(sql);
+const projectResults = await siyuan.executeSiyuanQuery(projectQuery);
+
+// 分类展示结果
+const titles = projectResults.filter((item) => item.type === 'h');
+const paragraphs = projectResults.filter((item) => item.type === 'p');
+const tasks = projectResults.filter((item) => item.type === 'l');
+
+return {
+  summary: `找到 ${projectResults.length} 条相关内容`,
+  titles: siyuan.formatResults(titles.slice(0, 5)),
+  keyContent: siyuan.formatResults(paragraphs.slice(0, 10)),
+  tasks: siyuan.formatResults(tasks.slice(0, 5)),
+};
 ```
 
-### 最佳实践建议
+### 时间线分析 (统计查询)
 
-#### 查询优化
-1. **合理使用LIMIT**: 避免返回过多结果，推荐10-50条
-2. **指定具体类型**: 使用`WHERE type = 'p'`过滤不需要的块类型
-3. **时间范围过滤**: 使用created/updated字段限制时间范围
-4. **内容长度过滤**: 使用`length > 10`排除空内容或过短内容
+```javascript
+// 分析最近的工作活动
+const activityAnalysis = await siyuan.executeSiyuanQuery(`
+    SELECT
+        DATE(substr(created, 1, 8)) as work_date,
+        COUNT(*) as content_count,
+        COUNT(DISTINCT root_id) as doc_count,
+        SUM(CASE WHEN type = 'l' THEN 1 ELSE 0 END) as task_count
+    FROM blocks
+    WHERE created >= strftime('%Y%m%d%H%M%S', datetime('now', '-7 days'))
+    AND (content LIKE '%工作%' OR content LIKE '%开发%' OR content LIKE '%项目%')
+    GROUP BY DATE(substr(created, 1, 8))
+    ORDER BY work_date DESC
+`);
 
-#### 搜索技巧
-1. **精确搜索**: 使用`=`进行精确匹配
-2. **模糊搜索**: 使用`LIKE '%关键词%'`进行模糊搜索
-3. **全文搜索**: 对于大量文本，考虑使用blocks_fts表
-4. **路径搜索**: 使用`hpath LIKE '%文档名%'`按文档搜索
+return siyuan.formatStructuredResults(activityAnalysis);
+```
 
-#### 结果处理
-1. **去重处理**: 使用`DISTINCT`避免重复结果
-2. **排序优化**: 使用`ORDER BY updated DESC`获取最新内容
-3. **字段选择**: 只选择需要的字段，提高查询效率
+### sql要求
 
-## 实际应用场景
+1. **SQL 语法规范**：
 
-### 📚 知识管理
-- **内容检索**: 快速查找特定主题的笔记内容
-- **文档整理**: 按时间或类型整理文档结构
-- **标签管理**: 基于内容自动分类和标记
+   - 在默认的情况下，用户可以在思源的嵌入块中输入 SQL 代码查询，此时 SQL 查询语句必须以 `select * from blocks` 开头：只允许查询 block 表，且不允许单独查询字段
+     - 面向开发者的高级用法：用户还可以调用后端 API 接口，发送 SQL 查询，此时是可以使用更普遍的 SQL 语法结构的（查询别的表，返回特定字段）
+   - 使用 SQLite 的语法，如 `strftime` 函数处理时间。
+   - 默认情况下，查询结果最多返回 64 个块，除非明确指定了 `limit xxx`
 
-### 📈 项目管理
-- **任务跟踪**: 查找包含项目关键词的相关内容
-- **进度回顾**: 按时间范围查看项目进展
-- **资源收集**: 整理项目相关的图片、代码、表格等资源
+2. **输出**：将查询语句放在一个 ```SQL 的 markdown 代码块当中，方便用户直接复制
 
-### 🔍 研究分析
-- **关联分析**: 通过引用表分析内容关联关系
-- **趋势分析**: 基于时间戳分析内容创作趋势
-- **知识图谱**: 构建笔记内容的关联网络
+### 表结构
 
-## 错误处理和故障排除
+**blocks 表:**
 
-### 常见问题解决
-1. **连接失败**: 检查思源笔记是否运行，端口是否正确
-2. **认证错误**: 验证API Token和Basic Auth配置
-3. **查询超时**: 增加LIMIT条件，减少结果集大小
-4. **语法错误**: 检查SQL语法，特别是引号和关键字使用
+- `id`: 内容块 ID，格式为 `时间-随机字符`，例如 `20210104091228-d0rzbmm`。
+- `parent_id`: 双亲块 ID，格式同 `id`
+- `root_id`: 文档块 ID，格式同 `id`
+- `box`: 笔记本 ID，格式同 `id`
+- `path`: 内容块所在文档路径，例如 `/20200812220555-lj3enxa/20210808180320-abz7w6k/20200825162036-4dx365o.sy`
+- `hpath`: 人类可读的内容块所在文档路径，例如 `/0 请从这里开始/编辑器/排版元素`
+- `name`: 内容块名称
+- `alias`: 内容块别名
+- `memo`: 内容块备注
+- `tag`: 标签，例如 `#标签1 #标签2# #标签3#`
+- `content`: 去除了 Markdown 标记符的文本
+- `fcontent`: 存储容器块第一个子块的内容
+- `markdown`: 包含完整 Markdown 标记符的文本
+- `length`: `markdown` 字段文本长度
+- `type`: 内容块类型
 
-### 调试技巧
-1. **简单测试**: 先用`SELECT 1`测试连接
-2. **分步查询**: 从简单查询开始，逐步增加复杂度
-3. **结果验证**: 检查返回结果的字段和数量是否符合预期
+  - `d`: 文档, `h`: 标题, `m`: 数学公式, `c`: 代码块, `t`: 表格块, `l`: 列表块, `b`: 引述块, `s`: 超级块，`p`：段落块，`av`：树形视图（俗称数据库，注意区分，这只是一个内容块的叫法）
 
----
+- `subtype`: 特定类型的内容块还存在子类型
 
-## Instructions (给AI的使用指南)
+  - 标题块的 `h1` 到 `h6`
+  - 列表块的 `u` (无序), `t` (任务), `o` (有序)
 
-作为AI助手，使用这个技能时请遵循以下原则：
+- `ial`: 内联属性列表，形如 `{: name="value"}`，例如 `{: id="20210104091228-d0rzbmm" updated="20210604222535"}`
+- `sort`: 排序权重，数值越小排序越靠前
+- `created`: 创建时间，格式为 `YYYYMMDDHHmmss`，例如 `20210104091228`
+- `updated`: 更新时间，格式同 `created`
 
-### 查询构建原则
-1. **优先使用content字段进行文本搜索**，这是最直接的方式
-2. **合理使用LIMIT**，避免返回过多结果影响用户体验
-3. **按updated DESC排序**，优先展示最新内容
-4. **根据查询目的选择合适的type**，如搜索用'p'，标题用'h'
+**refs 表:**
 
-### 用户意图理解
-1. **搜索关键词**: 使用content LIKE '%关键词%'
-2. **查找文档**: 使用type = 'd'
-3. **查找标题**: 使用type = 'h'
-4. **时间相关查询**: 使用created/updated字段和时间函数
-5. **特定文档搜索**: 使用hpath LIKE '%文档名%'
+- `id`: 引用 ID，格式为 `时间-随机字符`，例如 `20211127144458-idb32wk`
+- `def_block_id`: 被引用块的块 ID，格式同 `id`
+- `def_block_root_id`: 被引用块所在文档的 ID，格式同 `id`
+- `def_block_path`: 被引用块所在文档的路径，例如 `/20200812220555-lj3enxa/20210808180320-fqgskfj/20200905090211-2vixtlf.sy`
+- `block_id`: 引用所在内容块 ID，格式同 `id`
+- `root_id`: 引用所在文档块 ID，格式同 `id`
+- `box`: 引用所在笔记本 ID，格式同 `id`
+- `path`: 引用所在文档块路径，例如 `/20200812220555-lj3enxa/20210808180320-fqgskfj/20200905090211-2vixtlf.sy`
+- `content`: 引用锚文本
 
-### 结果展示优化
-1. **返回内容摘要**: 选择最重要的content字段
-2. **提供上下文**: 包含hpath和时间信息
-3. **控制结果数量**: 一般返回10-20条最相关结果
-4. **格式化输出**: 使用清晰的格式展示查询结果
+**attributes 表:**
 
-### 性能考虑
-1. **避免复杂嵌套查询**，保持查询简单高效
-2. **使用具体的过滤条件**，减少不必要的计算
-3. **缓存常用查询结果**，提高响应速度
-4. **批量操作优于多次单独查询**
+- `id`: 属性 ID，格式为 `时间-随机字符`，例如 `20211127144458-h7y55zu`
+- `name`: 属性名称
 
-这个技能为AI助手提供了强大的思源笔记数据访问能力，能够帮助用户快速、准确地找到所需信息，提升知识管理效率。
+  - 注意：思源中的用户自定义属性必须加上 `custom-` 前缀
+  - 例如 `name` 是块的内置属性，但 `custom-name` 就是用户的自定义属性了
+
+- `value`: 属性值
+- `type`: 类型，例如 `b`
+- `block_id`: 块 ID，格式同 `id`
+- `root_id`: 文档 ID，格式同 `id`
+- `box`: 笔记本 ID，格式同 `id`
+- `path`: 文档文件路径，例如 `/20200812220555-lj3enxa.sy`。
+
+### 查询要点提示
+
+- 所有 SQL 查询语句如果没有明确指定 `limit`，则会被思源查询引擎默认设置 `limit 64`
+- 块属性格式相关
+
+  - 块 ID 格式统一为 `时间-随机字符`, 例如 `20210104091228-d0rzbmm`
+  - 块的时间属性，如 created updated 的格式为 `YYYYMMDDHHmmss` 例如 `20210104091228`
+
+- 块之间的关系
+
+  - 层级关系：块大致可以分为
+
+    - 内容块（叶子块）：仅包含内容的块，例如段落 `p`，公式块 `m`，代码块 `c`，标题块 `h`，表格块 `t` 等
+
+      - 内容块的 `content`和 `markdown` 字段为块的内容
+
+    - 容器块：包含其他内容块或者容器块的块，例如 列表块 `l`，列表项块 `i`，引述块/引用块 `b`，超级块 `s`
+
+      - 每个块的 `parent_id` 指向他直接上层的容器块
+      - 容器块的 `content`和 `markdown` 字段为容器内所有块的内容
+
+    - 文档块：包含同一文档中所有内容块和容器块的块，`d`
+
+      - 每个块的 `root_id` 指向他所在的文档
+      - 容器块的 `content` 字段为文档的标题
+
+  - 引用关系：当一个块引用了另一个块的时候，会在 refs 表中建立联系
+
+    - 如果有多个块引用了同一个块，那么对这个被引用的块而言，这些引用它的块构成了它的反向链接（反链）
+    - 所有引用关系被存放在 ref 表当中；使用的时候将 blocks 表和 ref 表搭配进行查询
+
+- Daily Note：又称日记，每日笔记，是一种特殊的**文档块**
+
+  - daily note 文档有特殊属性：`custom-dailynote-<yyyyMMdd>=<yyyyMMdd>`；被标识了这个属性的文档块(type='d')，会被视为是对应日期的 daily note
+  - 例如 `custom-dailynote-20240101=20240101` 的文档，被视为 2024-01-01 这天的 daily note 文档
+  - 请注意！ daily note （日记）是一个文档块！如果要查询日记内部的内容，请使用 `root_id` 字段来关联日记文档和内部的块的关系
+
+- 书签：含有属性 `bookmark=<书签名>` 的块会被加入对应的书签
+
+### SQL 示例
+
+- 查询所有文档块
+
+  ```sql
+  select * from blocks where type='d'
+  ```
+
+- 查询所有二级标题块
+
+  ```sql
+  select * from blocks where subtype = 'h2'
+  ```
+
+- 查询某个文档的子文裆
+
+  ```sql
+  select * from blocks
+  where path like '%/<当前文档id>/%' and type='d'
+  ```
+
+- 随机漫游某个文档内所有标题块
+
+  ```sql
+  SELECT * FROM blocks
+  WHERE root_id LIKE '<文档 id>' AND type = 'h'
+  ORDER BY random() LIMIT 1
+  ```
+
+- 查询含有关键词「唯物主义」的段落块
+
+  ```sql
+  select * from blocks
+  where markdown like '%唯物主义%' and type ='p'
+  ORDER BY updated desc
+  ```
+
+- 查询过去 7 天内没有完成的任务（任务列表项）
+
+  > 注：思源中，任务列表项的 markdown 为 `* [ ] Task text` 如果是已经完成的任务，则是 `* [x] Task Text`
+
+  ```sql
+  SELECT * from blocks
+  WHERE type = 'l' AND subtype = 't'
+  AND created > strftime('%Y%m%d%H%M%S', datetime('now', '-7 day'))
+  AND markdown like'* [ ] %'
+  AND parent_id not in (
+    select id from blocks where subtype = 't'
+  )
+  ```
+
+- 查询某个块所有的反链块（引用了这个块的所有块）
+
+  ```sql
+  select * from blocks where id in (
+      select block_id from refs where def_block_id = '<被引用的块ID>'
+  ) limit 999
+  ```
+
+- 查询某个时间段内的 daily note（日记）
+
+  > 注意由于没有指定 limit，最大只能查询 64 个
+
+  ```sql
+  select distinct B.* from blocks as B join attributes as A
+  on B.id = A.block_id
+  where A.name like 'custom-dailynote-%' and B.type='d'
+  and A.value >= '20231010' and A.value <= '20231013'
+  order by A.value desc;
+  ```
+
+- 查询某个笔记本下没有被引用过的文档，限制 128 个
+
+  ```sql
+  select * from blocks as B
+  where B.type='d' and box='<笔记本 BoxID>' and B.id not in (
+      select distinct R.def_block_id from refs as R
+  ) order by updated desc limit 128
+  ```
