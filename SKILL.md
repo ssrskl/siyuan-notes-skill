@@ -5,20 +5,20 @@ description: 思源笔记查询工具，如果用户的请求涉及查找、检�
 
 ## 快速使用指南
 
-### 推荐调用方式
+### 核心方法
 
 ```bash
-# 全文搜索（推荐，支持中文分词）
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 20); console.log('找到', r.totalCount, '条结果，', r.totalPages, '页'); r.blocks.forEach((b, i) => { const type = b.type === 'NodeHeading' ? '标题' : b.type === 'NodeDocument' ? '文档' : b.type === 'NodeParagraph' ? '段落' : '块'; console.log((i+1) + '. [' + type + '] ' + (b.content?.replace(/<[^>]+>/g, '').substring(0, 100) || '(无内容)')); }); })();"
+# 全文搜索（推荐，支持中文分词，返回格式化字符串）
+node -e "const s = require('./index.js'); (async () => { console.log(await s.searchNotes('关键词', 20)); })();"
 
-# 只搜索标题
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 10, 'h'); console.log('找到', r.totalCount, '条结果'); r.blocks.forEach((b, i) => console.log((i+1) + '. ' + (b.content?.replace(/<[^>]+>/g, '') || '(无内容)'))); })();"
+# 按类型搜索（只搜索标题）
+node -e "const s = require('./index.js'); (async () => { console.log(await s.searchNotes('关键词', 10, 'h')); })();"
 
-# 获取更多结果（翻页，第2页）
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 20, null, 2); console.log('第', r.currentPage, '/', r.totalPages, '页'); r.blocks.forEach((b, i) => { const type = b.type === 'NodeHeading' ? '标题' : '段落'; console.log((i+1) + '. [' + type + '] ' + (b.content?.replace(/<[^>]+>/g, '').substring(0, 100) || '(无内容)')); }); })();"
+# 翻页（第2页）
+node -e "const s = require('./index.js'); (async () => { console.log(await s.searchNotes('关键词', 20, null, 2)); })();"
 
-# SQL复杂查询
-node -e "const s = require('./index.js'); (async () => { const r = await s.executeSiyuanQuery('SELECT * FROM blocks WHERE content LIKE \"%关键词%\" LIMIT 10'); r.forEach((b, i) => console.log((i+1) + '. ' + (b.content?.substring(0, 100) || '(无内容)'))); })();"
+# SQL查询（返回精简后的原始数据数组）
+node -e "const s = require('./index.js'); (async () => { console.log(await s.executeSiyuanQuery('SELECT * FROM blocks WHERE content LIKE \\\"%关键词%\\\" LIMIT 10')); })();"
 ```
 
 ### 块类型参数
@@ -33,45 +33,15 @@ node -e "const s = require('./index.js'); (async () => { const r = await s.execu
 
 ## 搜索策略指南
 
-### 核心原则：持续尝试，直到解决用户问题
+### 核心原则
 
-搜索不是一次性的，如果第一次搜索不到结果，应该：
+持续尝试，直到解决用户问题：
 
-1. **尝试同义词/相关词**：如"压缩"可搜"压缩、优化、减小、精简"
-2. **尝试模糊关键词**：如"图片压缩"可搜"压缩"、"图片"
-3. **尝试不同块类型**：标题搜不到就搜段落、文档
-4. **尝试SQL查询**：全文搜索不到就用SQL LIKE
-5. **尝试组合查询**：多个关键词用 OR 连接
-6. **尝试翻页获取更多结果**：第一次搜索的结果不够，就搜索第2页、第3页
-
-### 多轮搜索示例
-
-用户问"我的笔记里关于前端优化的内容"
-
-第一轮 - 精确匹配：
-```bash
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('前端优化', 20); console.log('找到', r.totalCount, '条结果'); r.blocks.forEach((b, i) => { const type = b.type === 'NodeHeading' ? '标题' : '段落'; console.log((i+1) + '. [' + type + '] ' + (b.content?.replace(/<[^>]+>/g, '').substring(0, 100) || '(无内容)')); }); })();"
-```
-
-如果结果不足 → 第二轮 - 相关词：
-```bash
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('性能优化', 20); console.log('找到', r.totalCount, '条结果'); r.blocks.forEach((b, i) => { const type = b.type === 'NodeHeading' ? '标题' : '段落'; console.log((i+1) + '. [' + type + '] ' + (b.content?.replace(/<[^>]+>/g, '').substring(0, 100) || '(无内容)')); }); })();"
-```
-
-如果结果不足 → 第三轮 - 拆分词：
-```bash
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('优化', 20); console.log('找到', r.totalCount, '条，', r.totalPages, '页'); r.blocks.slice(0, 10).forEach((b, i) => { const type = b.type === 'NodeHeading' ? '标题' : '段落'; console.log((i+1) + '. [' + type + '] ' + (b.content?.replace(/<[^>]+>/g, '').substring(0, 100) || '(无内容)')); }); })();"
-```
-
-如果还有更多页 → 第四轮 - 翻页：
-```bash
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('优化', 20, null, 2); console.log('第', r.currentPage, '/', r.totalPages, '页'); r.blocks.forEach((b, i) => { const type = b.type === 'NodeHeading' ? '标题' : '段落'; console.log((i+1) + '. [' + type + '] ' + (b.content?.replace(/<[^>]+>/g, '').substring(0, 100) || '(无内容)')); }); })();"
-```
-
-如果结果仍不足 → 第五轮 - SQL组合查询：
-```bash
-node -e "const s = require('./index.js'); (async () => { const r = await s.executeSiyuanQuery('SELECT * FROM blocks WHERE content LIKE \"%前端%\" OR content LIKE \"%性能%\" OR content LIKE \"%优化%\" LIMIT 10'); r.forEach((b, i) => console.log((i+1) + '. ' + (b.content?.substring(0, 100) || '(无内容)'))); })();"
-```
+1. **尝试同义词/相关词**
+2. **尝试模糊关键词**（拆分复合词）
+3. **尝试不同块类型**（标题、段落、文档）
+4. **尝试翻页获取更多结果**
+5. **尝试SQL组合查询**
 
 ### 关键词扩展技巧
 
@@ -88,22 +58,10 @@ node -e "const s = require('./index.js'); (async () => { const r = await s.execu
 
 ### blocks 表结构
 
-- `id`: 块ID (格式: 时间-随机字符)
-- `type`: 块类型 (`d`文档 `h`标题 `p`段落 `l`列表 `c`代码 `t`表格 `b`引用)
-- `subtype`: 子类型 (标题 h1-h6, 列表 u无序/t任务/o有序)
-- `content`: 去除Markdown标记的文本
-- `markdown`: 包含完整Markdown标记的文本
-- `hpath`: 人类可读路径 (如 `/笔记本/文档`)
-- `created`: 创建时间 (YYYYMMDDHHmmss)
-- `updated`: 更新时间 (YYYYMMDDHHmmss)
-- `root_id`: 所属文档ID
-- `parent_id`: 父块ID
-- `box`: 笔记本ID
-
-### refs 表结构
-
-- `def_block_id`: 被引用块的ID
-- `block_id`: 引用所在块的ID
+- `id`: 块ID | `type`: 块类型(d/h/p/l/c/t/b) | `subtype`: 子类型
+- `content`: 纯文本 | `markdown`: Markdown文本 | `hpath`: 人类可读路径
+- `created/updated`: 创建/更新时间 (YYYYMMDDHHmmss)
+- `root_id`: 所属文档ID | `parent_id`: 父块ID | `box`: 笔记本ID
 
 ### SQL 示例
 
@@ -111,18 +69,12 @@ node -e "const s = require('./index.js'); (async () => { const r = await s.execu
 -- 查询段落块
 SELECT * FROM blocks WHERE type='p' AND content LIKE '%关键词%'
 
--- 查询最近7天内容
-SELECT * FROM blocks WHERE updated > strftime('%Y%m%d%H%M%S', datetime('now', '-7 day'))
-
 -- 组合查询（多个关键词）
 SELECT * FROM blocks WHERE content LIKE '%关键词1%' OR content LIKE '%关键词2%'
 
--- 查询包含标签的块
-SELECT * FROM blocks WHERE content LIKE '%#标签名%'
+-- 查询最近7天
+SELECT * FROM blocks WHERE updated > strftime('%Y%m%d%H%M%S', datetime('now', '-7 day'))
 
 -- 查询反向链接
 SELECT * FROM blocks WHERE id IN (SELECT block_id FROM refs WHERE def_block_id='块ID')
-
--- 查询未完成任务
-SELECT * FROM blocks WHERE type='l' AND subtype='t' AND markdown LIKE '* [ ] %'
 ```
