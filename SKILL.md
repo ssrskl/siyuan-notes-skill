@@ -5,37 +5,49 @@ description: 思源笔记查询工具，如果用户的请求涉及查找、检�
 
 ## 技能使用指南
 
-### 推荐调用方式
+### ⚠️ 重要：正确的调用方式
 
-**方式1：使用Bash工具**
+**推荐方式：直接使用 Bash 工具执行 node -e 代码**
+
+这是最可靠、最简洁的调用方式：
+
 ```bash
-# 在技能目录中执行搜索
-node index.js search "工作总结" 10
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 20); console.log(s.formatResults(r)); })();"
+```
 
-# 查询最近内容
+**为什么这种方式最好？**
+- ✅ 一次性执行，无需临时文件
+- ✅ 自动从当前目录加载 .env 配置
+- ✅ 可以直接调用所有 API 函数
+- ✅ 支持复杂的查询逻辑
+
+**示例：搜索笔记**
+```bash
+# 搜索包含"图片压缩"的笔记
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('图片压缩', 20); console.log(s.formatResults(r)); })();"
+
+# 搜索标题
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('工作总结', 10, 'h'); console.log(s.formatResults(r)); })();"
+
+# 查询最近7天内容
+node -e "const s = require('./index.js'); (async () => { const r = await s.getRecentBlocks(7, 'updated'); console.log(s.formatResults(r)); })();"
+
+# 查询未完成任务
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchTasks('[ ]', 7); console.log(s.formatResults(r)); })();"
+```
+
+**方式2：使用命令行参数（简单场景）**
+```bash
+node index.js search "关键词" 20
+node index.js search "关键词" 10 h
 node index.js recent 7
-
-# 其他功能
-node index.js check
+node index.js tasks "[ ]" 7
 ```
 
-**方式2：使用node -e执行JS代码（使用显示的 skill Base directory 作为 cwd）**
-```bash
-node -e "
-const siyuan = require('./index.js');
-(async () => {
-  const results = await siyuan.searchNotes('工作总结', 10);
-  console.log(siyuan.formatResults(results));
-})();
-"  
-```
-
-**注意事项：**
-- 直接执行index.js时：会自动从其所在目录加载.env文件，无需特殊路径处理
-- 使用node -e时：用技能执行时显示的 "Base directory for this skill" 路径作为cwd参数
-- 路径中包含空格时需要引号
-- 不要用cd命令，直接用cwd参数控制工作目录
-- 尽可能使用 node -e执行而非创建临时 js 文件
+**⚠️ 不要这样做：**
+- ❌ 不要使用 `cwd` 参数（会导致路径问题）
+- ❌ 不要创建临时 js 文件
+- ❌ 不要使用 `cd` 命令
 
 ## 快速使用指南
 

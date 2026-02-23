@@ -125,6 +125,73 @@ SIYUAN_BASIC_AUTH_PASS=password
 }
 
 /**
+ * 调用思源笔记API的通用函数
+ * @param {string} endpoint - API端点路径
+ * @param {Object} requestBody - 请求体
+ * @returns {Promise<Object>} API响应数据
+ */
+async function callSiyuanAPI(endpoint, requestBody) {
+    // 检查环境配置
+    if (!checkEnvironmentConfig()) {
+        throw new Error('环境配置不完整');
+    }
+
+    const apiUrl = `${API_BASE_URL}${endpoint}`;
+
+    try {
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+
+        let response;
+
+        // 根据是否配置Basic Auth来决定认证方式
+        if (SIYUAN_BASIC_AUTH_USER && SIYUAN_BASIC_AUTH_PASS) {
+            const basicAuthCredentials = Buffer.from(`${SIYUAN_BASIC_AUTH_USER}:${SIYUAN_BASIC_AUTH_PASS}`).toString('base64');
+            headers.Authorization = `Basic ${basicAuthCredentials}`;
+
+            const urlWithToken = `${apiUrl}?token=${encodeURIComponent(SIYUAN_API_TOKEN)}`;
+
+            if (DEBUG_MODE) console.log(`🔐 调用API: ${endpoint}`);
+
+            response = await fetch(urlWithToken, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestBody)
+            });
+        } else {
+            headers.Authorization = `Token ${SIYUAN_API_TOKEN}`;
+
+            if (DEBUG_MODE) console.log(`🔑 调用API: ${endpoint}`);
+
+            response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestBody)
+            });
+        }
+
+        if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            throw new Error(errorMessage);
+        }
+
+        const result = await response.json();
+
+        if (result.code !== 0) {
+            throw new Error(`思源API错误: ${result.msg || '未知错误'}`);
+        }
+
+        return result.data;
+    } catch (error) {
+        if (error.name === 'FetchError' || error.code === 'ECONNREFUSED') {
+            throw new Error(`无法连接到思源笔记: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
+/**
  * 执行思源笔记SQL查询
  * @param {string} sqlQuery - SQL查询语句
  * @returns {Promise<Object>} 查询结果
@@ -243,29 +310,120 @@ async function executeSiyuanQuery(sqlQuery) {
 }
 
 /**
- * 搜索包含关键词的笔记内容 (基于思源SQL规范)
+ * 全文搜索笔记块 (使用思源全文搜索API)
+ * @param {string} query - 搜索查询词
+ * @param {Object} options - 搜索选项
+ * @returns {Promise<Array>} 搜索结果
+ */
+async function fullTextSearch(query, options = {}) {
+    const {
+        method = 0,  // 0: 关键字, 1: 查询语法, 2: SQL, 3: 正则
+        types = {},  // 块类型过滤
+        paths = [],  // 路径过滤
+        groupBy = 0, // 分组方式
+        orderBy = 0, // 排序方式
+        page = 1     // 页码
+    } = options;
+
+    // 默认启用的块类型 (根据你的请求示例)
+    const defaultTypes = {
+        audioBlock: true,
+        blockquote: true,
+        codeBlock: true,
+        databaseBlock: true,
+        document: true,
+        embedBlock: true,
+        heading: true,
+        htmlBlock: true,
+        iframeBlock: true,
+        list: false,
+        listItem: false,
+        mathBlock: true,
+        paragraph: true,
+        superBlock: true,
+        table: false,
+        videoBlock: true,
+        widgetBlock: true
+    };
+
+    const requestBody = {
+        query,
+        method,
+        types: { ...defaultTypes, ...types },
+        paths,
+        groupBy,
+        orderBy,
+        page,
+        reqId: Date.now()
+    };
+
+    if (DEBUG_MODE) {
+        console.log('🔍 全文搜索参数:', JSON.stringify(requestBody, null, 2));
+    }
+
+    return await callSiyuanAPI('/api/search/fullTextSearchBlock', requestBody);
+}
+
+/**
+ * 搜索包含关键词的笔记内容 (使用全文搜索API)
  * @param {string} keyword - 搜索关键词
  * @param {number} limit - 返回结果数量限制
- * @param {string} blockType - 块类型过滤
+ * @param {string} blockType - 块类型过滤 (可选)
  * @returns {Promise<Array>} 查询结果
  */
 async function searchNotes(keyword, limit = 20, blockType = null) {
-    let sql = `
-        SELECT id, content, type, subtype, created, updated, root_id, parent_id, box, path, hpath
-        FROM blocks
-        WHERE markdown LIKE '%${keyword}%'
-    `;
+    // 使用全文搜索API，支持中文分词，搜索命中率更高
+    const options = { page: 1 };
 
+    // 如果指定了块类型，设置类型过滤
     if (blockType) {
-        sql += ` AND type = '${blockType}'`;
+        // 将块类型转换为对应的 types 配置
+        const typeMap = {
+            'd': { document: true },  // 文档
+            'h': { heading: true },   // 标题
+            'p': { paragraph: true }, // 段落
+            'l': { list: true, listItem: true }, // 列表
+            'c': { codeBlock: true }, // 代码块
+            't': { table: true },     // 表格
+            'b': { blockquote: true } // 引用
+        };
+
+        if (typeMap[blockType]) {
+            // 先禁用所有类型，然后启用指定类型
+            options.types = {
+                audioBlock: false,
+                blockquote: false,
+                codeBlock: false,
+                databaseBlock: false,
+                document: false,
+                embedBlock: false,
+                heading: false,
+                htmlBlock: false,
+                iframeBlock: false,
+                list: false,
+                listItem: false,
+                mathBlock: false,
+                paragraph: false,
+                superBlock: false,
+                table: false,
+                videoBlock: false,
+                widgetBlock: false,
+                ...typeMap[blockType]
+            };
+        }
     }
 
-    sql += `
-        ORDER BY updated DESC
-        LIMIT ${limit}
-    `;
+    const results = await fullTextSearch(keyword, options);
 
-    return await executeSiyuanQuery(sql);
+    // 全文搜索API返回结构: { blocks: [...], matchedBlockCount: N, matchedRootCount: M, pageCount: 1 }
+    if (results && results.blocks && Array.isArray(results.blocks)) {
+        if (DEBUG_MODE) {
+            console.log(`🎯 搜索完成: 找到 ${results.matchedBlockCount} 个匹配块，${results.matchedRootCount} 个文档`);
+        }
+        return results.blocks.slice(0, limit);
+    }
+
+    return [];
 }
 
 /**
@@ -849,6 +1007,7 @@ async function main() {
 // 导出函数供其他模块使用
 module.exports = {
     executeSiyuanQuery,
+    fullTextSearch,
     searchNotes,
     listDocuments,
     getDocumentHeadings,
