@@ -262,27 +262,44 @@ async function searchNotes(keyword, limit = 20, blockType = null, page = 1) {
 
         const blocks = results.blocks.slice(0, limit);
 
-        let output = `找到 ${results.matchedBlockCount} 条结果，第 ${page}/${results.pageCount} 页\n\n`;
+        /** 按文档分组，减少重复路径显示 */
+        const groupedByDoc = {};
+        const typeMap = {
+            'NodeDocument': '文档',
+            'NodeHeading': '标题',
+            'NodeParagraph': '段落',
+            'NodeCodeBlock': '代码',
+            'NodeTable': '表格',
+            'NodeList': '列表',
+            'NodeBlockquote': '引用',
+            'NodeSuperBlock': '超级块'
+        };
 
-        blocks.forEach((item, index) => {
-            const typeMap = {
-                'NodeDocument': '文档',
-                'NodeHeading': '标题',
-                'NodeParagraph': '段落',
-                'NodeCodeBlock': '代码',
-                'NodeTable': '表格',
-                'NodeList': '列表',
-                'NodeBlockquote': '引用',
-                'NodeSuperBlock': '超级块'
-            };
+        blocks.forEach((item) => {
+            const path = item.hPath || '未知文档';
+            if (!groupedByDoc[path]) {
+                groupedByDoc[path] = [];
+            }
             const type = typeMap[item.type] || '块';
             const content = (item.content || '').replace(/<[^>]+>/g, '');
-            const path = item.hPath ? ` (${item.hPath})` : '';
-
-            output += `${index + 1}. [${type}] ${content.substring(0, 150)}${content.length > 150 ? '...' : ''}${path}\n`;
+            groupedByDoc[path].push({ type, content });
         });
 
-        return output;
+        let output = `找到 ${results.matchedBlockCount} 条结果，第 ${page}/${results.pageCount} 页\n\n`;
+        let globalIndex = 1;
+
+        for (const [path, items] of Object.entries(groupedByDoc)) {
+            output += `📄 ${path}\n`;
+            items.forEach((item) => {
+                const content = item.content.substring(0, 150);
+                const truncated = item.content.length > 150 ? '...' : '';
+                output += `  ${globalIndex}. [${item.type}] ${content}${truncated}\n`;
+                globalIndex++;
+            });
+            output += '\n';
+        }
+
+        return output.trim();
     }
 
     return `未找到包含"${keyword}"的结果`;
