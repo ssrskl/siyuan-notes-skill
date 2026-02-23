@@ -9,13 +9,16 @@ description: 思源笔记查询工具，如果用户的请求涉及查找、检�
 
 ```bash
 # 全文搜索（推荐，支持中文分词）
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 20); console.log(s.formatResults(r)); })();"
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 20); console.log('共', r.totalCount, '条，', r.totalPages, '页'); console.log(r.blocks); })();"
 
 # 只搜索标题
-node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 10, 'h'); console.log(s.formatResults(r)); })();"
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 10, 'h'); console.log('共', r.totalCount, '条'); console.log(r.blocks); })();"
+
+# 获取更多结果（翻页，第2页）
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('关键词', 20, null, 2); console.log('第', r.currentPage, '/', r.totalPages, '页'); console.log(r.blocks); })();"
 
 # SQL复杂查询
-node -e "const s = require('./index.js'); (async () => { const r = await s.executeSiyuanQuery('SELECT * FROM blocks WHERE content LIKE \"%关键词%\" LIMIT 10'); console.log(s.formatResults(r)); })();"
+node -e "const s = require('./index.js'); (async () => { console.log(await s.executeSiyuanQuery('SELECT * FROM blocks WHERE content LIKE \"%关键词%\" LIMIT 10')); })();"
 ```
 
 ### 块类型参数
@@ -39,6 +42,47 @@ node -e "const s = require('./index.js'); (async () => { const r = await s.execu
 3. **尝试不同块类型**：标题搜不到就搜段落、文档
 4. **尝试SQL查询**：全文搜索不到就用SQL LIKE
 5. **尝试组合查询**：多个关键词用 OR 连接
+6. **尝试翻页获取更多结果**：第一次搜索的结果不够，就搜索第2页、第3页
+
+### 多轮搜索示例
+
+用户问"我的笔记里关于前端优化的内容"
+
+第一轮 - 精确匹配（第1页，每页20条）：
+```bash
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('前端优化', 20); console.log('共', r.totalCount, '条结果'); console.log(r.blocks); })();"
+```
+
+如果结果不足 → 第二轮 - 相关词：
+```bash
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('性能优化', 20); console.log('共', r.totalCount, '条结果'); console.log(r.blocks); })();"
+```
+
+如果结果不足 → 第三轮 - 拆分词并查看是否有更多页：
+```bash
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('优化', 20); console.log('共', r.totalCount, '条，', r.totalPages, '页'); console.log(r.blocks); })();"
+```
+
+如果还有更多页 → 第四轮 - 翻页查看第2页：
+```bash
+node -e "const s = require('./index.js'); (async () => { const r = await s.searchNotes('优化', 20, null, 2); console.log('第', r.currentPage, '/', r.totalPages, '页'); console.log(r.blocks); })();"
+```
+
+如果结果仍不足 → 第五轮 - SQL组合查询：
+```bash
+node -e "const s = require('./index.js'); (async () => { console.log(await s.executeSiyuanQuery('SELECT * FROM blocks WHERE content LIKE \"%前端%\" OR content LIKE \"%性能%\" OR content LIKE \"%优化%\" LIMIT 30')); })();"
+```
+
+### 关键词扩展技巧
+
+| 用户查询 | 可尝试的关键词 |
+|---------|--------------|
+| 图片压缩 | 压缩、优化、减小、webp、图片处理 |
+| 工作总结 | 总结、周报、月报、汇报、复盘 |
+| bug修复 | bug、修复、问题、issue、调试 |
+| 学习笔记 | 学习、笔记、记录、整理、心得 |
+
+---
 
 ## SQL 查询参考
 

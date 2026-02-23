@@ -369,11 +369,12 @@ async function fullTextSearch(query, options = {}) {
  * @param {string} keyword - 搜索关键词
  * @param {number} limit - 返回结果数量限制
  * @param {string} blockType - 块类型过滤 (可选)
- * @returns {Promise<Array>} 查询结果
+ * @param {number} page - 页码 (可选，默认第1页)
+ * @returns {Promise<Object>} 包含结果和分页信息的对象: { blocks: [], totalCount: N, totalPages: M, currentPage: 1 }
  */
-async function searchNotes(keyword, limit = 20, blockType = null) {
+async function searchNotes(keyword, limit = 20, blockType = null, page = 1) {
     // 使用全文搜索API，支持中文分词，搜索命中率更高
-    const options = { page: 1 };
+    const options = { page };
 
     // 如果指定了块类型，设置类型过滤
     if (blockType) {
@@ -420,10 +421,15 @@ async function searchNotes(keyword, limit = 20, blockType = null) {
         if (DEBUG_MODE) {
             console.log(`🎯 搜索完成: 找到 ${results.matchedBlockCount} 个匹配块，${results.matchedRootCount} 个文档`);
         }
-        return results.blocks.slice(0, limit);
+        return {
+            blocks: results.blocks.slice(0, limit),
+            totalCount: results.matchedBlockCount,
+            totalPages: results.pageCount,
+            currentPage: page
+        };
     }
 
-    return [];
+    return { blocks: [], totalCount: 0, totalPages: 0, currentPage: page };
 }
 
 /**
