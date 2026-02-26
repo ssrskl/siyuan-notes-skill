@@ -40,7 +40,7 @@ function validateSearchParams(keyword, blockType = null, page = 1) {
     }
 
     if (blockType !== null && blockType !== undefined) {
-        const validTypes = ['d', 'h', 'p', 'l', 'c', 't', 'b'];
+        const validTypes = ['d', 'h', 'p', 'l', 'c', 't', 'b', 'av'];
         if (!validTypes.includes(blockType)) {
             throw new ValidationError(
                 `无效的块类型 "${blockType}"。支持的类型: ${validTypes.join(', ')}`,
@@ -721,31 +721,128 @@ async function getDocumentAssets(docId) {
 }
 
 /**
+ * 解析命令行参数（支持命名参数和位置参数）
+ * @param {string[]} args - 命令行参数数组
+ * @param {Object} options - 参数配置
+ * @returns {Object} 解析后的参数对象
+ */
+function parseArgs(args, options = {}) {
+    const result = {};
+    const positionalArgs = [];
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+
+        if (arg.startsWith('--')) {
+            // 命名参数: --key value 或 --key=value
+            const key = arg.slice(2);
+            const eqIndex = key.indexOf('=');
+
+            if (eqIndex !== -1) {
+                // --key=value 格式
+                const actualKey = key.slice(0, eqIndex);
+                const value = key.slice(eqIndex + 1);
+                result[actualKey] = value;
+            } else if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+                // --key value 格式
+                result[key] = args[++i];
+            } else {
+                // 布尔标志 --flag
+                result[key] = true;
+            }
+        } else if (arg.startsWith('-')) {
+            // 短参数: -k value 或 -k=value
+            const key = arg.slice(1);
+            const eqIndex = key.indexOf('=');
+
+            if (eqIndex !== -1) {
+                const actualKey = key.slice(0, eqIndex);
+                const value = key.slice(eqIndex + 1);
+                result[actualKey] = value;
+            } else if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+                result[key] = args[++i];
+            } else {
+                result[key] = true;
+            }
+        } else {
+            // 位置参数
+            positionalArgs.push(arg);
+        }
+    }
+
+    return { ...result, _positional: positionalArgs };
+}
+
+/**
+ * 显示帮助信息
+ */
+function showHelp() {
+    console.log(`
+思源笔记查询工具 v1.2.0
+
+用法:
+  node index.js <命令> [选项]
+
+命令:
+  search   全文搜索笔记内容
+  sql      执行SQL查询
+
+选项 (search 命令):
+  -k, --keyword <关键词>   搜索关键词（必需）
+  -t, --type <类型>        块类型过滤 (d/h/p/l/c/t/b/av)
+  -p, --page <页码>        页码，默认 1
+  -l, --limit <数量>       返回数量，默认 20
+
+选项 (sql 命令):
+  -q, --query <SQL语句>   SQL查询语句（必需）
+
+块类型说明:
+  d  - 文档      h  - 标题      p  - 段落      l  - 列表
+  c  - 代码块    t  - 表格      b  - 引用      av - 属性视图
+
+示例:
+  # 搜索包含"人工智能"的笔记
+  node index.js search --keyword "人工智能"
+
+  # 搜索标题，限制10条结果
+  node index.js search -k "React" -t h -l 10
+
+  # 第2页结果
+  node index.js search -k "前端" -p 2
+
+  # 执行SQL查询
+  node index.js sql -q "SELECT * FROM blocks WHERE type='d' LIMIT 10"
+
+  # 兼容旧格式（位置参数）
+  node index.js search "关键词" [类型] [页码]
+  node index.js sql "SELECT * FROM blocks LIMIT 10"
+`);
+}
+
+/**
+ * 显示命令错误提示
+ */
+function showCommandError(invalidCommand) {
+    console.error(`
+❌ 未知命令: ${invalidCommand}
+
+支持的命令:
+  search  - 搜索笔记内容
+  sql     - 执行SQL查询
+
+使用 "node index.js" 或 "node index.js --help" 查看详细帮助
+`);
+}
+
+/**
  * 主函数 - 命令行入口
  */
 async function main() {
     const args = process.argv.slice(2);
 
-    if (args.length === 0) {
-        console.log(`
-思源笔记查询工具使用说明:
-
-用法:
-  node index.js <命令> [参数]
-
-命令:
-  search <关键词> [类型] [页码]  - 搜索包含关键词的笔记
-  sql <SQL语句>                  - 执行SQL查询
-
-块类型:
-  d - 文档, h - 标题, p - 段落, l - 列表
-  c - 代码块, t - 表格, b - 引用
-
-示例:
-  node index.js search "人工智能"
-  node index.js search "前端" h 1
-  node index.js sql "SELECT * FROM blocks WHERE type='d' LIMIT 10"
-        `);
+    // 显示帮助信息
+    if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
+        showHelp();
         return;
     }
 
@@ -757,33 +854,105 @@ async function main() {
 
     try {
         switch (command) {
-            case 'search':
-                if (args.length < 2) {
-                    console.error('请提供搜索关键词');
+            case 'search': {
+                // 检查是否请求帮助
+                if (args.includes('--help') || args.includes('-h')) {
+                    console.log(`
+search 命令 - 搜索笔记内容
+
+用法:
+  node index.js search [选项]
+
+选项:
+  -k, --keyword <关键词>   搜索关键词（必需）
+  -t, --type <类型>        块类型过滤 (d/h/p/l/c/t/b/av)
+  -p, --page <页码>        页码，默认 1
+  -l, --limit <数量>       返回数量，默认 20
+
+示例:
+  node index.js search -k "人工智能"
+  node index.js search -k "React" -t h -l 10
+  node index.js search "关键词" "h" "1"  # 兼容旧格式
+`);
                     return;
                 }
-                const keyword = args[1];
-                const blockType = args[2] || null;
-                const pageNum = parseInt(args[3]) || 1;
-                const searchResults = await searchNotes(keyword, 20, blockType, pageNum);
+
+                // 解析参数（支持命名参数和位置参数）
+                const parsed = parseArgs(args.slice(1));
+
+                let keyword, blockType, pageNum, limitNum;
+
+                if (parsed.keyword || parsed.k) {
+                    // 命名参数格式
+                    keyword = parsed.keyword || parsed.k;
+                    blockType = parsed.type || parsed.t || null;
+                    pageNum = parseInt(parsed.page || parsed.p) || 1;
+                    limitNum = parseInt(parsed.limit || parsed.l) || 20;
+                } else if (parsed._positional.length > 0) {
+                    // 位置参数格式（向后兼容）
+                    keyword = parsed._positional[0];
+                    blockType = parsed._positional[1] || null;
+                    pageNum = parseInt(parsed._positional[2]) || 1;
+                    limitNum = 20; // 旧格式保持默认 20
+                } else {
+                    console.error('❌ 请提供搜索关键词');
+                    console.log('使用 "node index.js search --help" 查看帮助');
+                    return;
+                }
+
+                const searchResults = await searchNotes(keyword, limitNum, blockType, pageNum);
                 console.log(searchResults);
                 break;
+            }
 
-            case 'sql':
-                if (args.length < 2) {
-                    console.error('请提供SQL语句');
+            case 'sql': {
+                // 检查是否请求帮助
+                if (args.includes('--help') || args.includes('-h')) {
+                    console.log(`
+sql 命令 - 执行SQL查询
+
+用法:
+  node index.js sql [选项]
+
+选项:
+  -q, --query <SQL语句>   SQL查询语句（必需）
+
+示例:
+  node index.js sql -q "SELECT * FROM blocks WHERE type='d' LIMIT 10"
+  node index.js sql "SELECT * FROM blocks LIMIT 10"  # 兼容旧格式
+`);
                     return;
                 }
-                const sqlQuery = args.slice(1).join(' ');
+
+                // 解析参数
+                const parsed = parseArgs(args.slice(1));
+
+                let sqlQuery;
+                if (parsed.query || parsed.q) {
+                    // 命名参数格式
+                    sqlQuery = parsed.query || parsed.q;
+                } else if (parsed._positional.length > 0) {
+                    // 位置参数格式（向后兼容）
+                    sqlQuery = parsed._positional.join(' ');
+                } else {
+                    console.error('❌ 请提供SQL语句');
+                    console.log('使用 "node index.js sql --help" 查看帮助');
+                    return;
+                }
+
                 const sqlResults = await executeSiyuanQuery(sqlQuery);
                 console.log(JSON.stringify(sqlResults, null, 2));
                 break;
+            }
 
             default:
-                console.error(`未知命令: ${command}`);
+                showCommandError(command);
         }
     } catch (error) {
-        console.error('执行失败:', error.message);
+        console.error('❌ 执行失败:', error.message);
+        if (error.name === 'ValidationError') {
+            console.error(`   字段: ${error.field}`);
+        }
     }
 }
 

@@ -3,6 +3,43 @@ name: siyuan-notes
 description: 思源笔记查询工具，如果用户的请求涉及查找、检索、浏览他们的笔记内容，就应该使用这个技能，例如:查询我的xxx
 ---
 
+## 📖 使用方式
+
+本工具支持两种使用方式：
+
+### 方式一：命令行调用（人类用户）
+
+```bash
+# 搜索笔记
+node index.js search --keyword "关键词" [--type <类型>] [--page <页码>] [--limit <数量>]
+
+# 执行SQL查询
+node index.js sql --query "SELECT * FROM blocks LIMIT 10"
+
+# 简写形式
+node index.js search -k "React" -t h -l 10
+node index.js sql -q "SELECT * FROM blocks WHERE type='d'"
+```
+
+**参数说明：**
+- `--keyword, -k`: 搜索关键词（必需）
+- `--type, -t`: 块类型过滤 (d/h/p/l/c/t/b/av)，可选
+- `--page, -p`: 页码，默认 1
+- `--limit, -l`: 返回数量，默认 20
+- `--query, -q`: SQL语句
+
+**兼容旧格式：**
+```bash
+node index.js search "关键词" [类型] [页码]
+node index.js sql "SELECT语句"
+```
+
+### 方式二：JavaScript 函数调用（AI Agent 智能体）
+
+通过编程方式调用，详见下方"智能体决策指南"。
+
+---
+
 ## 🤖 智能体决策指南
 
 **当用户询问笔记内容时，按以下优先级选择函数：**
@@ -155,7 +192,7 @@ await executeSiyuanQuery(`
 **参数：**
 - `keyword`: 搜索关键词（必需）
 - `limit`: 返回数量，默认 20
-- `blockType`: 块类型 (d/h/p/l/c/t/b)，null 表示全部
+- `blockType`: 块类型 (d/h/p/l/c/t/b/av)，null 表示全部
 - `page`: 页码，默认 1
 
 **返回：** 格式化字符串，可直接展示
@@ -163,6 +200,7 @@ await executeSiyuanQuery(`
 **块类型：**
 - `d`: 文档, `h`: 标题, `p`: 段落
 - `l`: 列表, `c`: 代码块, `t`: 表格, `b`: 引用
+- `av`: 属性视图
 
 ---
 
@@ -492,7 +530,7 @@ await executeSiyuanQuery(`
 - **搜索关键词不能为空**
 - **SQL 只允许 SELECT**（禁止 INSERT/UPDATE/DELETE/DROP）
 - **页码范围**：1-1000
-- **块类型**：d, h, p, l, c, t, b
+- **块类型**：d, h, p, l, c, t, b, av
 
 ---
 
@@ -517,16 +555,18 @@ await executeSiyuanQuery(`
 扩展: name, alias, memo, tag, fcontent, hash, path, ial, sort
 ```
 
-### 支持的块类型（17种）
+### 支持的块类型（18种）
 
 ```
 d: 文档      | h: 标题     | p: 段落
 l: 列表      | c: 代码块   | t: 表格
 b: 引用      | s: 超级块   | av: 属性视图
-widget: 小组件 | i: 内嵌 | iframe: 内嵌框架
-m: 数学公式  | html: HTML | video: 视频
+widget: 小组件 | i: 内嵌   | iframe: 内嵌框架
+m: 数学公式  | html: HTML  | video: 视频
 query_embed: 嵌入 | tb: 无序列表
 ```
+
+**搜索支持的类型**：d, h, p, l, c, t, b, av（最常用）
 
 ### refs 表（引用关系）
 
