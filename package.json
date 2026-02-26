@@ -22,7 +22,6 @@
   "dependencies": {
     "node-fetch": "^3.3.2"
   },
-  "devDependencies": {},
   "repository": {
     "type": "git",
     "url": "https://github.com/anthropics/claude-skills"

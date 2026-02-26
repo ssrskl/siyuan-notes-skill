@@ -29,6 +29,13 @@ node -e "const s = require('./index.js'); (async () => { console.log(await s.exe
 
 不要使用 `cwd` 参数、不要创建临时文件、不要使用 `cd` 命令
 
+### 输入限制
+
+- **搜索关键词不能为空**
+- **SQL 查询只允许 SELECT 语句**（禁止 INSERT/UPDATE/DELETE/DROP 等）
+- **页码范围**：1-1000
+- **块类型必须是有效代码**：d, h, p, l, c, t, b
+
 ---
 
 ## 搜索策略指南

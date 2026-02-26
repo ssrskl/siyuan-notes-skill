@@ -6,6 +6,173 @@
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * 验证错误类
+ * 用于区分输入验证错误和其他类型的错误
+ */
+class ValidationError extends Error {
+    constructor(message, field) {
+        super(message);
+        this.name = 'ValidationError';
+        this.field = field;
+    }
+}
+
+/**
+ * 验证搜索参数
+ * @param {string} keyword - 搜索关键词
+ * @param {string} blockType - 块类型
+ * @param {number} page - 页码
+ * @throws {ValidationError} 参数无效时抛出
+ */
+function validateSearchParams(keyword, blockType = null, page = 1) {
+    if (keyword === null || keyword === undefined) {
+        throw new ValidationError('搜索关键词不能为空', 'keyword');
+    }
+
+    const trimmedKeyword = String(keyword).trim();
+
+    if (trimmedKeyword.length === 0) {
+        throw new ValidationError(
+            '搜索关键词不能为空或仅包含空格。请提供一个有效的搜索词。',
+            'keyword'
+        );
+    }
+
+    if (blockType !== null && blockType !== undefined) {
+        const validTypes = ['d', 'h', 'p', 'l', 'c', 't', 'b'];
+        if (!validTypes.includes(blockType)) {
+            throw new ValidationError(
+                `无效的块类型 "${blockType}"。支持的类型: ${validTypes.join(', ')}`,
+                'blockType'
+            );
+        }
+    }
+
+    const pageNum = parseInt(page);
+    if (isNaN(pageNum) || pageNum < 1) {
+        throw new ValidationError(
+            `无效的页码 "${page}"。页码必须是大于 0 的整数。`,
+            'page'
+        );
+    }
+
+    if (pageNum > 1000) {
+        throw new ValidationError(
+            `页码 ${pageNum} 超出最大限制 (1000)。如需查看更多结果，请调整搜索关键词。`,
+            'page'
+        );
+    }
+}
+
+/**
+ * 验证 SQL 查询语句（白名单模式）
+ * @param {string} sqlQuery - SQL 查询语句
+ * @throws {ValidationError} SQL 无效或包含危险操作时抛出
+ */
+function validateSQLQuery(sqlQuery) {
+    if (!sqlQuery || typeof sqlQuery !== 'string') {
+        throw new ValidationError('SQL 查询语句不能为空', 'sqlQuery');
+    }
+
+    const trimmedSQL = sqlQuery.trim();
+
+    if (trimmedSQL.length === 0) {
+        throw new ValidationError('SQL 查询语句不能为空', 'sqlQuery');
+    }
+
+    const selectPattern = /^\s*(SELECT|select|SELECT\s+DISTINCT|select\s+distinct)/i;
+
+    if (!selectPattern.test(trimmedSQL)) {
+        throw new ValidationError(
+            `只允许 SELECT 查询语句。检测到的 SQL 可能包含非查询操作。\n` +
+            `当前 SQL: ${trimmedSQL.substring(0, 100)}${trimmedSQL.length > 100 ? '...' : ''}`,
+            'sqlQuery'
+        );
+    }
+
+    const dangerousKeywords = [
+        '\bDROP\s',
+        '\bDELETE\s',
+        '\bTRUNCATE\s',
+        '\bALTER\s',
+        '\bCREATE\s',
+        '\bINSERT\s',
+        '\bUPDATE\s',
+        '\bGRANT\s',
+        '\bREVOKE\s',
+        '\bEXECUTE\s',
+        '\bEXEC\s',
+    ];
+
+    for (const keyword of dangerousKeywords) {
+        const regex = new RegExp(keyword, 'i');
+        if (regex.test(trimmedSQL)) {
+            throw new ValidationError(
+                `SQL 语句包含不允许的操作: "${keyword.trim()}"。` +
+                `只允许只读的 SELECT 查询。`,
+                'sqlQuery'
+            );
+        }
+    }
+
+    const injectionPatterns = [
+        /;\s*DROP/i,
+        /;\s*DELETE/i,
+        /';\s*DROP/i,
+        /";\s*DROP/i,
+        /--\s*\w/i,
+        /\/\*\*.*\*\//i,
+        /UNION\s+SELECT/i,
+    ];
+
+    for (const pattern of injectionPatterns) {
+        if (pattern.test(trimmedSQL)) {
+            throw new ValidationError(
+                `检测到可能的 SQL 注入模式。请检查 SQL 语句的合法性。`,
+                'sqlQuery'
+            );
+        }
+    }
+
+    if (!/\bFROM\b/i.test(trimmedSQL)) {
+        if (DEBUG_MODE) {
+            console.log('⚠️  SQL 查询缺少 FROM 子句，请确认查询语句正确。');
+        }
+    }
+}
+
+/**
+ * 清理 HTML 内容，提取纯文本
+ * @param {string} htmlContent - 包含 HTML 的内容
+ * @returns {string} 清理后的纯文本
+ */
+function cleanHTMLContent(htmlContent) {
+    if (!htmlContent || typeof htmlContent !== 'string') {
+        return '';
+    }
+
+    try {
+        return htmlContent
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s+/g, ' ')
+            .trim();
+    } catch (error) {
+        if (DEBUG_MODE) {
+            console.log('⚠️  HTML 清理失败:', error.message);
+        }
+        return htmlContent.replace(/<[^>]+>/g, '').trim();
+    }
+}
+
 /** 加载.env文件 */
 function loadEnvFile() {
     try {
@@ -216,6 +383,15 @@ async function fullTextSearch(query, options = {}) {
  * @returns {Promise<string>} 格式化后的结果
  */
 async function searchNotes(keyword, limit = 20, blockType = null, page = 1) {
+    try {
+        validateSearchParams(keyword, blockType, page);
+    } catch (error) {
+        if (error instanceof ValidationError) {
+            throw error;
+        }
+        throw new ValidationError(`参数验证失败: ${error.message}`);
+    }
+
     const options = { page };
 
     if (blockType) {
@@ -281,7 +457,7 @@ async function searchNotes(keyword, limit = 20, blockType = null, page = 1) {
                 groupedByDoc[path] = [];
             }
             const type = typeMap[item.type] || '块';
-            const content = (item.content || '').replace(/<[^>]+>/g, '');
+            const content = cleanHTMLContent(item.content || '');
             groupedByDoc[path].push({ type, content });
         });
 
@@ -311,6 +487,15 @@ async function searchNotes(keyword, limit = 20, blockType = null, page = 1) {
  * @returns {Promise<Array>} 查询结果数组
  */
 async function executeSiyuanQuery(sqlQuery) {
+    try {
+        validateSQLQuery(sqlQuery);
+    } catch (error) {
+        if (error instanceof ValidationError) {
+            throw error;
+        }
+        throw new ValidationError(`SQL 验证失败: ${error.message}`);
+    }
+
     if (!checkEnvironmentConfig()) {
         throw new Error('环境配置不完整');
     }
@@ -495,7 +680,10 @@ async function main() {
 // 导出函数供其他模块使用
 module.exports = {
     executeSiyuanQuery,
-    searchNotes
+    searchNotes,
+    validateSearchParams,
+    validateSQLQuery,
+    cleanHTMLContent
 };
 
 // 如果直接运行此文件，执行主函数
