@@ -444,11 +444,20 @@ async function searchNotes(keyword, limit = 20, blockType = null, page = 1) {
             'NodeDocument': '文档',
             'NodeHeading': '标题',
             'NodeParagraph': '段落',
-            'NodeCodeBlock': '代码',
+            'NodeCodeBlock': '代码块',
             'NodeTable': '表格',
             'NodeList': '列表',
+            'NodeListItem': '列表项',
             'NodeBlockquote': '引用',
-            'NodeSuperBlock': '超级块'
+            'NodeSuperBlock': '超级块',
+            'NodeAudioBlock': '音频',
+            'NodeAttributeView': '属性视图',
+            'NodeHTMLBlock': 'HTML块',
+            'NodeIFrame': '内嵌框架',
+            'NodeMathBlock': '数学公式',
+            'NodeQueryEmbed': '嵌入查询',
+            'NodeWidget': '小组件',
+            'NodeVideoBlock': '视频'
         };
 
         blocks.forEach((item) => {
@@ -588,7 +597,16 @@ async function executeSiyuanQuery(sqlQuery) {
                 updated: item.updated,
                 root_id: item.root_id,
                 parent_id: item.parent_id,
-                box: item.box
+                box: item.box,
+                name: item.name || '',
+                alias: item.alias || '',
+                memo: item.memo || '',
+                tag: item.tag || '',
+                fcontent: item.fcontent || '',
+                hash: item.hash || '',
+                path: item.path || '',
+                ial: item.ial || '',
+                sort: item.sort || 0
             }));
         }
 
@@ -608,6 +626,98 @@ async function executeSiyuanQuery(sqlQuery) {
 
         throw new Error(`查询失败: ${error.message}`);
     }
+}
+
+/**
+ * 查询引用某个块的所有块（反向链接）
+ * @param {string} blockId - 被引用的块ID
+ * @returns {Promise<Array>} 引用该块的块列表
+ */
+async function getBacklinks(blockId) {
+    if (!blockId || typeof blockId !== 'string' || blockId.trim().length === 0) {
+        throw new ValidationError('块ID不能为空', 'blockId');
+    }
+
+    const sql = `
+        SELECT b.id, b.type, b.subtype, b.content, b.markdown, b.hpath,
+               b.created, b.updated, b.root_id, b.parent_id, b.box,
+               b.name, b.alias, b.memo, b.tag, b.fcontent, b.hash,
+               b.path, b.ial, b.sort, r.def_block_id
+        FROM blocks b
+        INNER JOIN refs r ON b.id = r.block_id
+        WHERE r.def_block_id = '${blockId.trim()}'
+        ORDER BY b.updated DESC
+    `;
+
+    return executeSiyuanQuery(sql);
+}
+
+/**
+ * 查询某个块引用的所有块（正向链接）
+ * @param {string} blockId - 块ID
+ * @returns {Promise<Array>} 该块引用的块列表
+ */
+async function getOutgoingLinks(blockId) {
+    if (!blockId || typeof blockId !== 'string' || blockId.trim().length === 0) {
+        throw new ValidationError('块ID不能为空', 'blockId');
+    }
+
+    const sql = `
+        SELECT b.id, b.type, b.subtype, b.content, b.markdown, b.hpath,
+               b.created, b.updated, b.root_id, b.parent_id, b.box,
+               b.name, b.alias, b.memo, b.tag, b.fcontent, b.hash,
+               b.path, b.ial, b.sort, r.block_id
+        FROM blocks b
+        INNER JOIN refs r ON b.id = r.def_block_id
+        WHERE r.block_id = '${blockId.trim()}'
+        ORDER BY b.updated DESC
+    `;
+
+    return executeSiyuanQuery(sql);
+}
+
+/**
+ * 查询块的属性
+ * @param {string} blockId - 块ID
+ * @returns {Promise<Object>} 属性键值对对象
+ */
+async function getBlockAttributes(blockId) {
+    if (!blockId || typeof blockId !== 'string' || blockId.trim().length === 0) {
+        throw new ValidationError('块ID不能为空', 'blockId');
+    }
+
+    const sql = `
+        SELECT name, value
+        FROM attributes
+        WHERE block_id = '${blockId.trim()}'
+    `;
+
+    const results = await executeSiyuanQuery(sql);
+
+    return results.reduce((acc, attr) => {
+        acc[attr.name] = attr.value;
+        return acc;
+    }, {});
+}
+
+/**
+ * 查询文档的所有资源文件
+ * @param {string} docId - 文档ID
+ * @returns {Promise<Array>} 资源文件列表
+ */
+async function getDocumentAssets(docId) {
+    if (!docId || typeof docId !== 'string' || docId.trim().length === 0) {
+        throw new ValidationError('文档ID不能为空', 'docId');
+    }
+
+    const sql = `
+        SELECT id, name, ext, size, path, created, box
+        FROM assets
+        WHERE doc_id = '${docId.trim()}'
+        ORDER BY created DESC
+    `;
+
+    return executeSiyuanQuery(sql);
 }
 
 /**
@@ -681,6 +791,10 @@ async function main() {
 module.exports = {
     executeSiyuanQuery,
     searchNotes,
+    getBacklinks,
+    getOutgoingLinks,
+    getBlockAttributes,
+    getDocumentAssets,
     validateSearchParams,
     validateSQLQuery,
     cleanHTMLContent
